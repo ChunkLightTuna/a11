@@ -1,9 +1,7 @@
 import java.io.BufferedReader
 import java.io.FileInputStream
 import java.io.InputStream
-import java.security.SecureRandom
 import java.util.*
-import kotlin.system.exitProcess
 
 class shapeFinder {
     companion object {
@@ -12,27 +10,17 @@ class shapeFinder {
         val LARGE_ENOUGH_GAP_BETWEEN_POINTS = 3.5
         val SUFFICIENT_DENSITY_OF_INLIERS = .7
         val RANSAC_ATTEMPTS = 500
-        val ERROR = 4
-
-        var DEBUG = false
 
         @JvmStatic fun main(args: Array<String>) {
 
             if (args.isNotEmpty() && args[0].endsWith(".w"))
                 System.setIn(FileInputStream(args[0]))
-            DEBUG = (args.size > 1 && args[1] == "--DEBUG")
 
             val inputStream = System.`in`
 
             val shapeFinder = shapeFinder()
             val image = shapeFinder.parse(inputStream)
             inputStream.close()
-
-
-//            if (DEBUG) {
-//                println("${closePoints.size} out of ${image.pixels.size}")
-//                image.DEBUG(closePoints)
-//            }
 
             val lines = ransac(image)
 
@@ -56,8 +44,6 @@ class shapeFinder {
                 var i = 0
                 var found = closePoints.size
                 while (i < RANSAC_ATTEMPTS) {
-                    if (DEBUG)
-                        println("#$lewps: found ${closePoints.size} points out of ${image.pixels.size}")
 
                     line = Line.fit(closePoints)
                     closePoints = image.closePoints(line)
@@ -85,23 +71,17 @@ class shapeFinder {
                     last = it
                 }
 
-                if (DEBUG) {
-                    listOfLists.forEach {
-                        println("List:$it")
-                    }
-                }
 
                 val best = listOfLists.filter { list ->
                     list.size > SUFFICIENT_NUMBER_OF_INLIERS &&
                             list.size / (list.first().distance(list.last())) > SUFFICIENT_DENSITY_OF_INLIERS
                 }.maxBy { it -> it.size } ?: continue
 
-                val segment = LineSegment(best.first(), best.last())
+                val segment = LineSegment(line.projection(best.first()), line.projection(best.last()))
 
                 best.forEach {
                     image.pixels.remove(it)
                 }
-
                 out.add(segment)
             }
             return out
@@ -131,13 +111,13 @@ class shapeFinder {
             }
         }
 
-        return Image(cols, rows, /*grid,*/ pixels)
+        return Image(cols, rows, pixels)
 
 
     }
 }
 
-class Image(val cols: Int, val rows: Int, /*val grid: Array<BooleanArray>,*/ val pixels: HashSet<Point>, val random: Random = Random()) {
+class Image(val cols: Int, val rows: Int, val pixels: HashSet<Point>, val random: Random = Random()) {
     fun bootStrapLine(): Line {
         assert(pixels.size > 1)
         val i1 = random.nextInt(pixels.size)
@@ -149,27 +129,27 @@ class Image(val cols: Int, val rows: Int, /*val grid: Array<BooleanArray>,*/ val
     }
 
     fun closePoints(line: Line): List<Point> {
-        return pixels.filter { line.distance(it) < shapeFinder.ERROR }
+        return pixels.filter { line.distance(it) < shapeFinder.LARGE_ENOUGH_GAP_BETWEEN_POINTS }
     }
 
-    fun debug(points: Collection<Point>) {
-
-        val grid = Array(rows, { i -> Array(cols, { i -> false }).toBooleanArray() })
-
-        points.forEach { grid[it.x.toInt()][it.y.toInt()] = true }
-
-        print(' ')
-        (0 until cols).forEach { print('_') }
-        println()
-        grid.forEach {
-            print('|')
-            print(it.map { if (it) 'o' else ' ' }.toCharArray())
-            print("|\n")
-        }
-        print(' ')
-        (0 until cols).forEach { print('_') }
-        println()
-    }
+//    fun debug(points: Collection<Point>) {
+//
+//        val grid = Array(rows, { i -> Array(cols, { i -> false }).toBooleanArray() })
+//
+//        points.forEach { grid[it.x.toInt()][it.y.toInt()] = true }
+//
+//        print(' ')
+//        (0 until cols).forEach { print('_') }
+//        println()
+//        grid.forEach {
+//            print('|')
+//            print(it.map { if (it) 'o' else ' ' }.toCharArray())
+//            print("|\n")
+//        }
+//        print(' ')
+//        (0 until cols).forEach { print('_') }
+//        println()
+//    }
 }
 
 data class Point(val x: Double, val y: Double) {
@@ -201,25 +181,12 @@ data class Line(val m: Double, val b: Double, val denom: Double = Math.sqrt(m * 
             val Syy = points.map { it -> Math.pow(it.y - yBar, 2.0) }.sum() / sizeMinusOne
 
             //Note that βˆ1 is the slope(m) of the line you want and βˆ0 is its y-intercept(b).
-            val β1 =
-                    (Syy - Sxx + Math.sqrt(Math.pow(Syy - Sxx, 2.0) + 4 * Math.pow(Sxy, 2.0))) /
-                            (2 * Sxy)
+            val β1 = (Syy - Sxx + Math.sqrt(Math.pow(Syy - Sxx, 2.0) + 4 * Math.pow(Sxy, 2.0))) /
+                    (2 * Sxy)
+
             val β0 = yBar - β1 * xBar
 
-            val line = Line(β1, β0)
-
-
-            val starHats = points.map { it ->
-                val x = it.x + β1 / (Math.pow(β1, 2.0) + 1) * (it.y - β0 - β1 * it.x)
-                Point(x, β1 * x + β0)
-            }
-
-            //fuck yea works.
-            starHats.forEach { it ->
-                assert(line.distance(it) < .00001)
-            }
-
-            return line
+            return Line(β1, β0)
         }
     }
 }
